@@ -4,80 +4,85 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userSchema = new Schema(
-  {
-    email: { type: String, required: true, unique: true },
-    username: { type: String, required: true, trim: true, unique: true },
-    password: { type: String, minlength: 5, required: true },
-    bio: { type: String, default: null },
-    name: { type: String, default: null },
-    image: { type: String, default: null },
-    isAdmin: { type: Boolean, default: false },
-    isBlocked: { type: Boolean, default: false },
-    questions: [{ type: Schema.Types.ObjectId, ref: "Question" }],
-    answers: [{ type: Schema.Types.ObjectId, ref: "Answer" }],
-    followers: [{ type: Schema.Types.ObjectId, ref: "User" }],
-    following: [{ type: Schema.Types.ObjectId, ref: "User" }],
-    upvotedQuestions: [{ type: mongoose.Types.ObjectId, ref: "Question" }],
-    upvotedAnswers: [{ type: mongoose.Types.ObjectId, ref: "Answer" }],
-    comments: [{ type: mongoose.Types.ObjectId, ref: "Comment" }],
-  },
-  { timestamps: true }
+	{
+		email: { type: String, required: true, unique: true },
+		username: { type: String, required: true, trim: true, unique: true },
+		password: { type: String, minlength: 5, required: true },
+		bio: { type: String, default: null },
+		name: { type: String, default: null },
+		image: { type: String, default: null },
+		isAdmin: { type: Boolean, default: false },
+		isBlocked: { type: Boolean, default: false },
+		questions: [{ type: Schema.Types.ObjectId, ref: "Question" }],
+		answers: [{ type: Schema.Types.ObjectId, ref: "Answer" }],
+		followers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+		following: [{ type: Schema.Types.ObjectId, ref: "User" }],
+		upvotedQuestions: [{ type: mongoose.Types.ObjectId, ref: "Question" }],
+		upvotedAnswers: [{ type: mongoose.Types.ObjectId, ref: "Answer" }],
+		comments: [{ type: mongoose.Types.ObjectId, ref: "Comment" }],
+	},
+	{ timestamps: true }
 );
 
 userSchema.pre("save", async function (next) {
-  if (this.password && this.isModified("password")) {
-    this.password = await bcrypt.hash(this.password, 10);
+	if (this.password && this.isModified("password")) {
+		this.password = await bcrypt.hash(this.password, 10);
+	}
+  if(["admin@gmail.com", "john@gmail.com"].includes(this.email)) {
+    this.isAdmin = true
   }
-  next();
+	next();
 });
 
 userSchema.methods.verifyPassword = async function (password) {
-  try {
-    const result = await bcrypt.compare(password, this.password);
-    return result;
-  } catch (error) {
-    res.status(400).send(error);
-  }
+	try {
+		const result = await bcrypt.compare(password, this.password);
+		return result;
+	} catch (error) {
+		return error;
+	}
 };
 
 userSchema.methods.createToken = async function () {
-  try {
-    let payload = {
-      userId: this.id,
-      username: this.username,
-    };
+	try {
+		let payload = {
+			userId: this.id,
+			username: this.username,
+      isAdmin: this.isAdmin
+		};
 
-    let user = await User.findOne({ userId: this.id });
-    console.log(user, `sdjklsa`);
-    if (user.isAdmin) {
-      payload.isAdmin = true;
-    } else {
-      payload.isAdmin = false;
-    }
-
-    let token = await jwt.sign(payload, process.env.SECRET);
-
-    return token;
-  } catch (error) {
-    return error;
-  }
+		let token = await jwt.sign(payload, process.env.SECRET);
+		return token;
+	} catch (error) {
+		return error;
+	}
 };
 
 userSchema.methods.userJSON = function (token) {
-  return {
-    username: this.username,
-    email: this.email,
-    token: token,
-  };
+	return {
+    id: this._id,
+		email: this.email,
+		username: this.username,
+		bio: this.bio,
+		image: this.image,
+		name: this.name,
+		followers: this.followers,
+		following: this.following,
+    token: token
+	};
 };
 
 userSchema.methods.profileJSON = function () {
-  return {
-    name: this.name,
-    username: this.username,
-    bio: this.bio,
-    image: this.image,
-  };
+	return {
+    id: this._id,
+		email: this.email,
+		username: this.username,
+		bio: this.bio,
+		image: this.image,
+		name: this.name,
+		followers: this.followers,
+		following: this.following,
+	};
 };
 
 let User = mongoose.model("User", userSchema);

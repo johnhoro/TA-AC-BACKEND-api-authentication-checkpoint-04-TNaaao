@@ -26,13 +26,13 @@ module.exports = {
 
     try {
       let payload = await jwt.verify(token, process.env.SECRET);
-      console.log(payload);
-      if (payload.isAdmin) {
+      console.log(payload)
+      if (!payload.isAdmin) {
         return res
           .status(400)
           .json({ error: "You have to be loggedin as Admin" });
       }
-      req.body.user = payload;
+      req.user = payload;
       next();
     } catch (error) {
       next(error);

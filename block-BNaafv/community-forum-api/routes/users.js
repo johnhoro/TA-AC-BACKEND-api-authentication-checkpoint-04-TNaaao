@@ -5,7 +5,7 @@ const auth = require("../middlewares/auth");
 
 router.get("/", async (req, res) => {
   try {
-    var user = await User.find({});
+    var user = await User.find({}).select("-password");
     res.json({ user: user });
   } catch (error) {
     return error;
@@ -16,10 +16,8 @@ router.get("/", async (req, res) => {
 
 router.post("/register", async (req, res) => {
   try {
-    var user = await User.create(req.body);
-    console.log(user);
+    var user = await User.create({ ...req.body, isAdmin: false });
     var token = await user.createToken();
-    console.log(token);
     res.json({ user: user.userJSON(token) });
   } catch (error) {
     console.log(error);
@@ -44,6 +42,7 @@ router.post("/login", async function (req, res, next) {
       return res.status(400).json({ error: "Incorrect Password" });
     }
     var token = await user.createToken();
+    console.log(token);
     res.json({ user: user.userJSON(token) });
   } catch (error) {
     console.log(error);
@@ -57,9 +56,8 @@ router.get("/current-user", auth.isLoggedIn, async (req, res, next) => {
   let payload = req.user;
 
   var token = req.headers.authorization?.split(" ")[1] || null;
-  console.log(payload, token);
   try {
-    let user = await User.findOne({ userId: payload.userId });
+    let user = await User.findById(payload.userId);
     res.json({ user: await user.userJSON(token) });
   } catch (error) {
     console.log(error);
@@ -72,25 +70,32 @@ router.get("/current-user", auth.isLoggedIn, async (req, res, next) => {
 router.post("/:userId/follow", auth.isLoggedIn, async (req, res, next) => {
   let userId = req.params.userId;
   let loggedprofile = req.user;
-  console.log(userId, loggedprofile.userId);
   try {
-    let loggedUser = await User.findOne({ userId: loggedprofile.userId });
+    let loggedUser = await User.findById(loggedprofile.userId);
     if (userId === loggedUser.id) {
       return res.status(400).json({ error: "you cannot follow yourself" });
     } else if (loggedUser.following.includes(userId)) {
       return res
         .status(400)
-        .json({ error: "you can not follow same person twice" });
+        .json({ error: "you are already following a user" });
     } else {
-      let updatedTargetUser = await User.findByIdAndUpdate(userId, {
-        $push: { followers: loggedUser.id },
-      });
+      let updatedTargetUser = await User.findByIdAndUpdate(
+        userId,
+        {
+          $push: { followers: loggedUser.id },
+        },
+        { new: true }
+      );
 
-      let updatedUser = await User.findByIdAndUpdate(loggedUser.id, {
-        $push: { following: userId },
-      });
+      let updatedUser = await User.findByIdAndUpdate(
+        loggedUser.id,
+        {
+          $push: { following: userId },
+        },
+        { new: true }
+      );
 
-      return res.json({ updatedUser, updatedTargetUser });
+      return res.json({ user: updatedUser.userJSON() });
     }
   } catch (error) {
     console.log(error);
@@ -104,7 +109,7 @@ router.post("/:userId/unfollow", auth.isLoggedIn, async (req, res, next) => {
   let userId = req.params.userId;
   let loggedprofile = req.user;
   try {
-    let loggedUser = await User.findOne({ userId: loggedprofile.userId });
+    let loggedUser = await User.findById(loggedprofile.userId);
 
     if (userId === loggedUser.id) {
       return res.status(400).json({ error: "you cannot unfollow yourself" });
@@ -113,15 +118,23 @@ router.post("/:userId/unfollow", auth.isLoggedIn, async (req, res, next) => {
         .status(400)
         .json({ error: "you can not unfollow same person twice" });
     } else {
-      let updatedTargetUser = await User.findByIdAndUpdate(userId, {
-        $pull: { followers: loggedUser.id },
-      });
+      let updatedTargetUser = await User.findByIdAndUpdate(
+        userId,
+        {
+          $pull: { followers: loggedUser.id },
+        },
+        { new: true }
+      );
 
-      let updatedUser = await User.findByIdAndUpdate(loggedUser.id, {
-        $pull: { following: userId },
-      });
+      let updatedUser = await User.findByIdAndUpdate(
+        loggedUser.id,
+        {
+          $pull: { following: userId },
+        },
+        { new: true }
+      );
 
-      return res.json({ updatedUser, updatedTargetUser });
+      return res.json({ user: updatedUser.userJSON() });
     }
   } catch (error) {
     console.log(error);
@@ -131,39 +144,35 @@ router.post("/:userId/unfollow", auth.isLoggedIn, async (req, res, next) => {
 
 //block user by admin
 
-router.post("/block/:username", auth.isAdmin, async (req, res, next) => {
-  let username = req.params.username;
-  console.log(username, `john`);
+router.post("/block/:userId", auth.isAdmin, async (req, res, next) => {
+  let userId = req.params.userId;
+
   try {
-    let updatedProfile = await User.findOneAndUpdate(
-      { username },
-      { isBlocked: true }
+    let updatedProfile = await User.findByIdAndUpdate(
+      userId,
+      { isBlocked: true },
+      { new: true }
     );
 
-    return res.json({ updatedProfile });
+    return res.json({ user: updatedProfile.userJSON() });
   } catch (error) {
-    console.log(error);
     next(error);
   }
 });
 
 //unblock user by admin
 
-router.post("/unblock/:username", auth.isAdmin, async (req, res, next) => {
-  let username = req.params.username;
+router.post("/unblock/:userId", auth.isAdmin, async (req, res, next) => {
+  let userId = req.params.userId;
 
   try {
-    let updateduser = await User.findOneAndUpdate(
-      { username },
-      { isBlocked: false }
+    let updateduser = await User.findByIdAndUpdate(
+      userId,
+      { isBlocked: false },
+      { new: true }
     );
 
-    let updatedProfile = await User.findOneAndUpdate(
-      { username },
-      { isBlocked: false }
-    );
-
-    return res.json({ updatedProfile });
+    return res.json({ user: updateduser.userJSON() });
   } catch (error) {
     next(error);
   }
