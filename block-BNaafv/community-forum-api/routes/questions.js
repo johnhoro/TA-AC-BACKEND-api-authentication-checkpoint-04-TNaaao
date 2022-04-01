@@ -29,7 +29,7 @@ router.post("/", auth.isLoggedIn, async function (req, res, next) {
 
 router.get("/", auth.isLoggedIn, async function (req, res, next) {
   try {
-    let questions = await Question.find({});
+    let questions = await Question.find({}).populate("author", "-password");
     res.json({ questions });
   } catch (error) {
     next(error);
@@ -52,7 +52,7 @@ router.put("/:questionId", auth.isLoggedIn, async function (req, res, next) {
     } else {
       return res
         .status(400)
-        .json({ error: "only creater of question can edit question" });
+        .json({ error: "You don't have required permission" });
     }
   } catch (error) {
     console.log(error);
@@ -77,13 +77,10 @@ router.delete("/:slug", auth.isLoggedIn, async function (req, res, next) {
         { username: loggedUser.username },
         { $pull: { questions: question.id } }
       );
-      console.log(req.user);
-      res.json({ deletedQuestion });
-    } else {
-      return res
-        .status(400)
-        .json({ error: "only creater of question can delete question" });
+      return res.json({ status: "success" });
     }
+
+    throw new Error("You don't have required permission");
   } catch (error) {
     console.log(error);
     next(error);
@@ -97,7 +94,6 @@ router.post("/:questionId/answers", auth.isLoggedIn, async (req, res, next) => {
   let loggedUser = req.user;
 
   let data = req.body;
-  console.log(data);
   try {
     let profile = await User.findOne({ email: loggedUser.email });
 
@@ -106,16 +102,20 @@ router.post("/:questionId/answers", auth.isLoggedIn, async (req, res, next) => {
 
     let answer = await Answer.create(data);
 
-    let updatedQuestion = await Question.findByIdAndUpdate(questionId, {
-      $push: { answers: answer.id },
-    });
+    let updatedQuestion = await Question.findByIdAndUpdate(
+      questionId,
+      {
+        $push: { answers: answer.id },
+      },
+      { new: true }
+    ).populate("answers");
 
     let updatedUser = await User.findOneAndUpdate(
       { username: loggedUser.username },
       { $push: { answers: answer.id } }
     );
 
-    res.json({ answer });
+    res.json({ question: updatedQuestion });
   } catch (error) {
     console.log(error);
     next(error);
@@ -128,7 +128,7 @@ router.get("/:questionId/answers", auth.isLoggedIn, async (req, res, next) => {
   let questionId = req.params.questionId;
   try {
     let question = await Question.findById(questionId).populate("answers");
-    return res.json({ answers: question.answers });
+    return res.json({ answers: question });
   } catch (error) {
     next(error);
   }
@@ -139,20 +139,26 @@ router.get("/:questionId/answers", auth.isLoggedIn, async (req, res, next) => {
 router.post("/:questionId/upvote", auth.isLoggedIn, async (req, res, next) => {
   let questionId = req.params.questionId;
   try {
-    let loggedProfile = await User.findOne({
-      username: req.body.user.username,
-    });
+    let loggedProfile = await User.findById(req.user.userId);
 
-    let updatedQuestion = await Question.findByIdAndUpdate(questionId, {
-      $inc: { upvoteCount: 1 },
-      $push: { upvotedBy: loggedProfile.id },
-    });
+    if (loggedProfile.upvotedQuestions.includes(questionId)) {
+      throw new Error("Already upvoted");
+    } else {
+      let updatedQuestion = await Question.findByIdAndUpdate(
+        questionId,
+        {
+          $inc: { upvoteCount: 1 },
+          $push: { upvotedBy: loggedProfile.id },
+        },
+        { new: true }
+      );
 
-    let updatedProfile = await User.findByIdAndUpdate(loggedProfile.id, {
-      $push: { upvotedQuestions: updatedQuestion.id },
-    });
+      let updatedProfile = await User.findByIdAndUpdate(loggedProfile.id, {
+        $push: { upvotedQuestions: updatedQuestion.id },
+      });
 
-    return res.json({ question: updatedQuestion });
+      return res.json({ question: updatedQuestion });
+    }
   } catch (error) {
     next(error);
   }
@@ -166,20 +172,22 @@ router.post(
   async (req, res, next) => {
     let questionId = req.params.questionId;
     try {
-      let loggedProfile = await User.findOne({
-        username: req.body.user.username,
-      });
+      let loggedProfile = await User.findById(req.user.userId);
 
-      let updatedQuestion = await Question.findByIdAndUpdate(questionId, {
-        $inc: { upvoteCount: -1 },
-        $pull: { upvotedBy: loggedProfile.id },
-      });
+      if (loggedProfile.upvotedQuestions.includes(questionId)) {
+        let updatedQuestion = await Question.findByIdAndUpdate(questionId, {
+          $inc: { upvoteCount: -1 },
+          $pull: { upvotedBy: loggedProfile.id },
+        });
 
-      let updatedProfile = await User.findByIdAndUpdate(loggedProfile.id, {
-        $pull: { upvotedQuestions: updatedQuestion.id },
-      });
+        let updatedProfile = await User.findByIdAndUpdate(loggedProfile.id, {
+          $pull: { upvotedQuestions: updatedQuestion.id },
+        });
 
-      return res.json({ question: updatedQuestion });
+        return res.json({ question: updatedQuestion });
+      } else {
+        throw new Error("You have not upvoted a question");
+      }
     } catch (error) {
       next(error);
     }
@@ -195,7 +203,6 @@ router.post("/:questionId/comment", auth.isLoggedIn, async (req, res, next) => {
   let data = req.body;
   try {
     let profile = await User.findOne({ username: loggedProfile.username });
-    console.log(profile);
 
     data.author = profile.id;
     data.questionId = questionId;
